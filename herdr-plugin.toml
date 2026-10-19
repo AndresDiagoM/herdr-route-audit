@@ -1,12 +1,42 @@
 id = "route-audit"
 name = "Route Audit"
-version = "0.0.1"
+version = "0.1.0"
 min_herdr_version = "0.9.0"
-description = "Which OmniRoute combo step actually served each agent: step 1 as intended, or a silent fallback."
+description = "Which OmniRoute combo step actually served each agent pane: step 1 as intended, or a silent fallback. Sidebar badge, report and event log."
 platforms = ["windows", "linux", "macos"]
 
-# Prototype (M0): a one-shot report in the plugin log. The watcher, sidebar token and
-# per-pane attribution come in M1 — see the spec in ClaudeMaster/tool-ideas/01-route-audit.md.
+# The watcher: reads OmniRoute's call_logs (read-only), attributes requests to panes and keeps a
+# `$route` token on every agent pane. Needs the sidebar block from the `configure` action to show.
+[[startup]]
+command = ["node", "--disable-warning=ExperimentalWarning", "bin/watch.js", "--daemon"]
+
+[[actions]]
+id = "configure"
+title = "Route audit: install the $route sidebar row"
+description = "Write the managed [ui.sidebar.agents] block (Herdr's default rows plus the $route line) into config.toml and reload."
+command = ["node", "bin/configure.js", "--apply", "--reload"]
+
+[[actions]]
+id = "unconfigure"
+title = "Route audit: remove the sidebar row"
+description = "Stop the watcher and remove the managed block from config.toml. Do this before uninstalling."
+command = ["node", "--disable-warning=ExperimentalWarning", "bin/unconfigure.js"]
+
+[[actions]]
+id = "watch-start"
+title = "Route audit: start watcher"
+command = ["node", "--disable-warning=ExperimentalWarning", "bin/watch.js", "--daemon"]
+
+[[actions]]
+id = "watch-stop"
+title = "Route audit: stop watcher"
+command = ["node", "--disable-warning=ExperimentalWarning", "bin/watch.js", "--stop"]
+
+[[actions]]
+id = "watch-status"
+title = "Route audit: watcher status and last events"
+command = ["node", "--disable-warning=ExperimentalWarning", "bin/watch.js", "--status"]
+
 [[actions]]
 id = "report"
 title = "Route audit: report (last 2h)"
