@@ -1,0 +1,20 @@
+id = "route-audit"
+name = "Route Audit"
+version = "0.0.1"
+min_herdr_version = "0.9.0"
+description = "Which OmniRoute combo step actually served each agent: step 1 as intended, or a silent fallback."
+platforms = ["windows", "linux", "macos"]
+
+# Prototype (M0): a one-shot report in the plugin log. The watcher, sidebar token and
+# per-pane attribution come in M1 — see the spec in ClaudeMaster/tool-ideas/01-route-audit.md.
+[[actions]]
+id = "report"
+title = "Route audit: report (last 2h)"
+contexts = ["workspace", "tab", "pane"]
+command = ["node", "--disable-warning=ExperimentalWarning", "bin/report.js", "--since", "2h"]
+
+[[actions]]
+id = "report-week"
+title = "Route audit: report (last 7 days)"
+contexts = ["workspace", "tab", "pane"]
+command = ["node", "--disable-warning=ExperimentalWarning", "bin/report.js", "--since", "7d"]
