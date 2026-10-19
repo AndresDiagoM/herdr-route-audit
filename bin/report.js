@@ -46,13 +46,18 @@ function printText({ since, combos, tags, eps, rows, sessionsCap }) {
   console.log(`route-audit — ${rows.length} combo-routed requests since ${short(since)} (UTC)\n`);
 
   console.log('Per combo and step');
+  let anyHistorical = false;
   for (const c of combos) {
     console.log(`  ${c.combo}  [${c.strategy}]`);
     for (const s of c.steps) {
-      const mark = s.outcome === 'PRIMARY' ? '●' : s.outcome === 'FALLBACK' ? '◐' : s.outcome === 'FAILED' ? '✕' : s.outcome === 'UNKNOWN' ? '?' : '○';
-      const stepTxt = s.step === null ? 'none' : `step ${s.step}`;
+      const mark = s.outcome === 'PRIMARY' ? '●' : s.outcome === 'FALLBACK' ? '◐' : s.outcome === 'FAILED' ? '✕' : s.outcome === 'UNKNOWN' ? '?' : s.historical ? '†' : '○';
+      const stepTxt = s.step !== null ? `step ${s.step}` : s.historical ? 'removed' : 'none';
+      if (s.historical) anyHistorical = true;
       console.log(`    ${mark} ${pad(stepTxt, 7)} ${pad(s.label, 44)} ${rpad(s.count, 6)} req ${rpad(s.errors, 5)} err   last ${short(s.last)}`);
     }
+  }
+  if (anyHistorical) {
+    console.log('  † served by a step the combo no longer lists (edited or deleted since); the model shown is what the request itself recorded');
   }
 
   // Every session that is not plainly healthy, plus the most recent healthy ones up to the cap.
