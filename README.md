@@ -1,7 +1,10 @@
 # herdr-route-audit
 
-**Prototype — not published.** Which [OmniRoute](https://github.com/diegosouzapw/OmniRoute)
-combo step actually served each agent pane: step 1 as intended, or a silent fallback.
+Which [OmniRoute](https://github.com/diegosouzapw/OmniRoute) combo step actually served each
+agent pane: step 1 as intended, or a silent fallback.
+
+Developed and tested on Windows 11 with Herdr 0.9.5, OmniRoute 3.8.51 and Node 24/25. The code
+has no Windows-only paths, but Linux and macOS have not been tested yet: reports welcome.
 
 OmniRoute priority combos fall back silently and the pane footer only shows the combo name.
 `call_logs.combo_step_id` has the truth; this reads it (read-only), attributes each request to a
@@ -44,7 +47,7 @@ from herdr-telegram-agents into this plugin's `notify.json` (or `node bin/telegr
 --chat ID`). Then:
 
 - **One page when an incident opens**: the first request of a pane served by a fallback step or
-  by no step at all. `⚠️ route-audit: builder (w9:p35) on codigo-5-claude-sonnet → FALLBACK step 2
+  by no step at all. `⚠️ route-audit: builder (w9:p35) on sonnet-combo → FALLBACK step 2
   · claude/claude-sonnet-5`
 - **Nothing while it lasts**, however much it flaps between steps.
 - **One page when it closes**: after 3 consecutive clean step-1 requests. A step-1 error resets
@@ -129,4 +132,13 @@ on Windows): `watch.pid` (pid + heartbeat), `watch.log`, `events.jsonl`.
   refused rather than escaped, because `cmd.exe` has no quoting that is safe for arbitrary text. A
   timeout kills the whole process tree.
 
-Spec and roadmap: `C:\Users\felip\Documents\ClaudeMaster\tool-ideas\01-route-audit.md`.
+## Roadmap
+
+- Attribute panes that do not send the header, exactly, by the agent's own session id: opencode
+  already sends it as `x-opencode-session` (the same id Herdr reports for the pane), and
+  [OmniRoute#17125](https://github.com/diegosouzapw/OmniRoute/pull/17125) proposes storing it as
+  `call_logs.client_session_id`.
+
+## License
+
+MIT

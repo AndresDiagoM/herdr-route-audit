@@ -41,10 +41,10 @@ function respond(status, body) {
 }
 
 test('formatEvent: degraded names the pane, combo, step and model; recovered says step 1', () => {
-  const ev = { event: 'degraded', pane: 'w9:p35', agent: 'builder', combo: 'codigo-5-claude-sonnet', state: 'FALLBACK', step: 2, served_by: 'claude/claude-sonnet-5' };
-  assert.equal(notify.formatEvent(ev), '⚠️ route-audit: builder (w9:p35) on codigo-5-claude-sonnet → FALLBACK step 2 · claude/claude-sonnet-5');
-  assert.equal(notify.formatEvent({ ...ev, state: 'FAILED', served_by: '(no step served)' }), '⚠️ route-audit: builder (w9:p35) on codigo-5-claude-sonnet → FAILED · (no step served)');
-  assert.equal(notify.formatEvent({ ...ev, agent: null, event: 'recovered', state: 'PRIMARY', step: 1, served_by: 'claude/claude-sonnet-5-5' }), '✅ route-audit: w9:p35 on codigo-5-claude-sonnet back on step 1 · claude/claude-sonnet-5-5');
+  const ev = { event: 'degraded', pane: 'w9:p35', agent: 'builder', combo: 'sonnet-combo', state: 'FALLBACK', step: 2, served_by: 'claude/claude-sonnet-5' };
+  assert.equal(notify.formatEvent(ev), '⚠️ route-audit: builder (w9:p35) on sonnet-combo → FALLBACK step 2 · claude/claude-sonnet-5');
+  assert.equal(notify.formatEvent({ ...ev, state: 'FAILED', served_by: '(no step served)' }), '⚠️ route-audit: builder (w9:p35) on sonnet-combo → FAILED · (no step served)');
+  assert.equal(notify.formatEvent({ ...ev, agent: null, event: 'recovered', state: 'PRIMARY', step: 1, served_by: 'claude/claude-sonnet-5-5' }), '✅ route-audit: w9:p35 on sonnet-combo back on step 1 · claude/claude-sonnet-5-5');
 });
 
 test('config round-trip; incomplete or missing config loads as null', () => {
