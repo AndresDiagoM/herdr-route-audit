@@ -38,6 +38,27 @@ title = "Route audit: watcher status and last events"
 command = ["node", "--disable-warning=ExperimentalWarning", "bin/watch.js", "--status"]
 
 [[actions]]
+id = "probe"
+title = "Route audit: self-test (make a harmless fallback, expect the badge)"
+description = "Scratch tab + throwaway combo whose step 1 is rejected; one request on step 2; passes when the pane reads FALLBACK. Cleans up after itself."
+command = ["node", "--disable-warning=ExperimentalWarning", "bin/probe.js"]
+
+[[actions]]
+id = "telegram-setup"
+title = "Route audit: page fallbacks to Telegram (copy bot from herdr-telegram-agents)"
+command = ["node", "bin/telegram.js", "--from-telegram-agents"]
+
+[[actions]]
+id = "telegram-test"
+title = "Route audit: send a Telegram test message"
+command = ["node", "bin/telegram.js", "--test"]
+
+[[actions]]
+id = "telegram-off"
+title = "Route audit: stop paging to Telegram"
+command = ["node", "bin/telegram.js", "--off"]
+
+[[actions]]
 id = "report"
 title = "Route audit: report (last 2h)"
 contexts = ["workspace", "tab", "pane"]

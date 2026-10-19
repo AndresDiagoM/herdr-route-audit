@@ -45,6 +45,25 @@ removes the block.
    while it ran. Two candidates is "shared" (no badge); none is unattributed. `report.js` and
    `watch.js --once` print those counts.
 
+## Paging
+
+`herdr plugin action invoke telegram-setup --plugin route-audit` copies the bot token and chat
+from herdr-telegram-agents into this plugin's `notify.json` (or `node bin/telegram.js --token T
+--chat ID`). From then on every transition into a fallback or failure, and the recovery, is one
+Telegram message: `⚠️ route-audit: builder (w9:p35) on codigo-5-claude-sonnet → FALLBACK step 2 ·
+claude/claude-sonnet-5`. `telegram-test` sends one message; `telegram-off` removes the config.
+A restarted watcher replays recent history silently — it never pages for transitions that
+happened before it started.
+
+## Self-test
+
+`herdr plugin action invoke probe --plugin route-audit` (or `node bin/probe.js`) opens a scratch
+tab, creates a throwaway combo `route-audit-probe` whose first step the catalog rejects, sends one
+tagged `opencode run --standalone` request through it, and passes when the pane's badge reads
+`FALLBACK step 2 · antigravity/gemini-3.8-flash-tiered` — then deletes the combo and closes the tab.
+It spends one request on step 2 and, if paging is on, one Telegram message. Override the steps
+with `--step1` / `--step2`; `--keep` leaves the combo and tab for inspection.
+
 ## Commands
 
 ```sh

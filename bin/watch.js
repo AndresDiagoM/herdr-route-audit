@@ -14,6 +14,7 @@ const { openReadOnly, loadCombos, loadRowsAfter, cursorBefore } = require('../li
 const { summarizeRows } = require('../lib/audit.js');
 const { attribute, tokenText, transition } = require('../lib/attribute.js');
 const herdr = require('../lib/herdr.js');
+const notify = require('../lib/notify.js');
 const { stateFile } = require('../lib/paths.js');
 
 const INTERVAL_MS = Number(process.env.ROUTE_AUDIT_INTERVAL_MS) || 5000;
@@ -49,13 +50,19 @@ class Watcher {
     this.written = new Map(); // paneId -> { text, state, at }
     this.combosRefreshedAt = Date.now();
     this.pending = []; // untagged rows waiting for a correlation decision
+    // The first tick replays up to REPLAY_MS of history to rebuild each pane's state. Those
+    // transitions already happened; announcing them again on every restart would page the
+    // operator for stale news.
+    this.seeding = true;
   }
 
   tick() {
+    // Universe = every pane (a tag may name a shell pane); correlation = agents that are working.
+    const panes = herdr.panes();
     const agents = herdr.agents();
-    if (agents === null) return { skipped: 'herdr agent list failed' };
+    if (panes === null || agents === null) return { skipped: 'herdr pane/agent list failed' };
     const now = Date.now();
-    const paneIds = agents.map((a) => a.pane_id);
+    const paneIds = panes.map((p) => p.pane_id);
     const working = new Set(agents.filter((a) => a.agent_status === 'working').map((a) => a.pane_id));
     this.history.push({ t: now, working });
     while (this.history.length && this.history[0].t < now - HISTORY_MS) this.history.shift();
@@ -80,6 +87,10 @@ class Watcher {
     }
 
     const reports = [];
+    const agentName = (paneId) => {
+      const a = agents.find((x) => x.pane_id === paneId) || panes.find((x) => x.pane_id === paneId) || {};
+      return a.name || a.label || a.agent || null;
+    };
     for (const paneId of paneIds) {
       const summary = summarizeRows(this.rowsByPane.get(paneId), this.combos);
       const text = tokenText(summary);
@@ -91,13 +102,20 @@ class Watcher {
         if (!this.dryRun) herdr.reportMetadata(paneId, { route: text }, { ttlMs: INTERVAL_MS * 4 });
         this.written.set(paneId, { text, state: summary.state, at: now });
       }
-      if (change) {
-        const event = { event: change, pane: paneId, combo: summary.combo, state: summary.state, served_by: summary.lastLabel, step: summary.lastStep };
+      if (change && !this.seeding) {
+        const event = { event: change, pane: paneId, agent: agentName(paneId), combo: summary.combo, state: summary.state, served_by: summary.lastLabel, step: summary.lastStep };
         appendEvent(event);
         console.log(`${new Date(now).toISOString()} ${change.toUpperCase()} ${paneId} ${summary.combo} -> ${text}`);
+        if (!this.dryRun) {
+          // Fire and forget; a slow Telegram must not delay the next tick.
+          notify.notifyEvent(event).then((r) => {
+            if (r && !r.ok) console.error(`telegram: ${r.reason}`);
+          }).catch(() => {});
+        }
       }
       reports.push({ paneId, text, attributed: (this.rowsByPane.get(paneId) || []).length });
     }
+    this.seeding = false;
     return { fresh: fresh.length, shared: shared.length, unattributed: unattributed.length - this.pending.length, pending: this.pending.length, reports };
   }
 
