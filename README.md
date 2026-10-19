@@ -27,16 +27,20 @@ removes the block.
 ## How a request finds its pane
 
 1. **Tag (exact).** If the pane's opencode sends `X-Omniroute-Session-Id: <HERDR_PANE_ID>`,
-   OmniRoute stores it as the request's `session_tag`. Add to the OmniRoute provider in
-   `opencode.json`:
+   OmniRoute stores it as the request's `session_tag`. Inject the header per pane and give the
+   pane its own opencode server:
 
-   ```json
-   "options": { "headers": { "X-Omniroute-Session-Id": "{env:HERDR_PANE_ID}" } }
+   ```sh
+   CFG='{"provider":{"omniroute":{"options":{"headers":{"X-Omniroute-Session-Id":"{env:HERDR_PANE_ID}"}}}}}'
+   herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd "$PWD" --label builder --no-focus --env "OPENCODE_CONFIG_CONTENT=$CFG"
+   herdr agent start builder --kind opencode --pane <pane_id> -- --standalone
    ```
 
-   and run opencode with `--standalone` inside the pane: the default background service
-   evaluates the config once, with *its* environment, so every pane would get the same id.
-   `{env:…}` is empty outside Herdr, and OmniRoute ignores an empty header.
+   `OPENCODE_CONFIG_CONTENT` is deep-merged over `opencode.json` (keys and URLs stay there).
+   `--standalone` matters: opencode's default background service evaluates the config once,
+   with *its* environment, so every pane would inherit one id. Don't put the header in the
+   global file for the same reason. Scripted `opencode run …` must close stdin (`</dev/null`)
+   or it hangs.
 2. **Correlation (approximate).** Otherwise a request goes to the one pane that was `working`
    while it ran. Two candidates is "shared" (no badge); none is unattributed. `report.js` and
    `watch.js --once` print those counts.
