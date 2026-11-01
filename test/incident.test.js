@@ -62,3 +62,16 @@ test('a step-1 error or a 499 neither opens an incident nor counts toward recove
 test('a second incident after recovery pages again', () => {
   assert.deepEqual(run([2, 1, 1, 1, 'fail', 1, 1, 1]).events, ['degraded', 'recovered', 'degraded', 'recovered']);
 });
+
+// Discussion #5400: a page says "inferred" when a request it rests on was placed by correlation.
+test('events carry inferred: the opening request for degraded, any of the clean run for recovered', () => {
+  const at = (kind, attributed) => ({ ...req(kind), attributed });
+  const state = newIncidentState();
+  const open = advance(state, [at(2, 'correlated')], combos);
+  assert.deepEqual(open.map((e) => [e.event, e.inferred]), [['degraded', true]]);
+  const close = advance(state, [at(1, 'tag'), at(1, 'correlated'), at(1, 'tag')], combos);
+  assert.deepEqual(close.map((e) => [e.event, e.inferred]), [['recovered', true]], 'the third clean row is tagged, but the run is not');
+  const s2 = newIncidentState();
+  const e2 = [...advance(s2, [at(2, 'tag')], combos), ...advance(s2, [at(1, 'correlated'), at('err1', 'tag'), at(1, 'tag'), at(1, 'tag'), at(1, 'tag')], combos)];
+  assert.deepEqual(e2.map((e) => [e.event, e.inferred]), [['degraded', false], ['recovered', false]], 'a step-1 error resets the run, and its guess with it');
+});

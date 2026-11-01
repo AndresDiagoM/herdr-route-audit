@@ -1,6 +1,6 @@
 id = "route-audit"
 name = "Route Audit"
-version = "0.2.0"
+version = "0.2.1"
 min_herdr_version = "0.9.0"
 description = "Which OmniRoute combo step actually served each agent pane: step 1 as intended, or a silent fallback. Sidebar badge, report and event log."
 platforms = ["windows", "linux", "macos"]

@@ -152,3 +152,21 @@ test('an oversized body stops the read instead of consuming it', async () => {
     assert.match(r.reason, /too large/);
   });
 });
+
+test('formatEvent: an inferred pane says so next to the pane id', () => {
+  const ev = { event: 'degraded', pane: 'w9:p35', agent: 'builder', combo: 'c', state: 'FALLBACK', step: 2, served_by: 'p/b', inferred: true };
+  assert.equal(notify.formatEvent(ev), '⚠️ route-audit: builder (w9:p35, inferred) on c → FALLBACK step 2 · p/b');
+  assert.equal(notify.formatEvent({ ...ev, agent: null }), '⚠️ route-audit: w9:p35 (inferred) on c → FALLBACK step 2 · p/b');
+  assert.equal(notify.formatEvent({ ...ev, inferred: false }), '⚠️ route-audit: builder (w9:p35) on c → FALLBACK step 2 · p/b');
+  assert.equal(notify.formatEvent({ ...ev, event: 'recovered', state: 'PRIMARY', step: 1, served_by: 'p/a' }), '✅ route-audit: builder (w9:p35, inferred) on c back on step 1 · p/a');
+});
+
+test('formatEvent: a watcher gap says how long, since when, from any client, and which combos had trouble', () => {
+  const ev = { event: 'gap', since: '2026-10-31T19:02Z', down_for: '38m', requests: 37, fallbacks: 5, failed: 1, by_combo: [{ combo: 'codigo-5', fallbacks: 3, failed: 0 }, { combo: 'reviewer', fallbacks: 2, failed: 1 }] };
+  assert.equal(notify.formatEvent(ev), '⚠️ route-audit: the watcher was down for 38m (since 2026-10-31T19:02Z) and saw none of the 37 combo requests OmniRoute logged meanwhile, from any client: 5 by a fallback step, 1 by no step. codigo-5: 3 fallback · reviewer: 2 fallback, 1 failed');
+  const many = { ...ev, by_combo: ['a', 'b', 'c', 'd', 'e'].map((combo) => ({ combo, fallbacks: 1, failed: 0 })) };
+  assert.match(notify.formatEvent(many), / a: 1 fallback · b: 1 fallback · c: 1 fallback \(\+2 more combos\)$/);
+  assert.match(notify.formatEvent({ ...ev, fallbacks: 0, failed: 0, by_combo: [] }), /0 by a fallback step, 0 by no step\.$/);
+  assert.match(notify.formatEvent({ ...ev, reset: true }), /reviewer: 2 fallback, 1 failed OmniRoute's call log was emptied meanwhile: what it held before that is gone\.$/);
+  assert.match(notify.formatEvent({ ...ev, trimmed: true }), / OmniRoute had already deleted the oldest of them: these are the ones left\.$/);
+});

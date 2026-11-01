@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { paneFromTag, attribute, tokenText, parseTime } = require('../lib/attribute.js');
+const { paneFromTag, attribute, tokenText, staleText, sharedText, formatAge, parseTime } = require('../lib/attribute.js');
 
 const panes = ['w9:p35', 'w9:p36'];
 
@@ -90,4 +90,63 @@ test('tokenText puts the state first, stays under 80 code points, and strips con
   const long = tokenText({ state: 'FALLBACK', lastStep: 3, lastLabel: '😀'.repeat(100) });
   assert.equal([...long].length, 80);
   assert.equal(tokenText(null), null);
+});
+
+// Discussion #5400: a pane found by correlation (the only one working) must not read as sure.
+// Herdr 0.9.5's default sidebar (26 columns) leaves 22 for the row, 21 when the agent list shows a
+// scrollbar, and truncate_end then keeps 20 characters plus "…". So the marker is glued to the
+// state word, and every variant must show both within 20 characters.
+const VISIBLE = 20;
+test('tokenText: an inferred pane is marked right on the state word, inside the first 20 columns', () => {
+  const s = (o) => tokenText({ lastLabel: 'claude/claude-sonnet-5-5', window: 10, ...o, inferred: true });
+  assert.equal(s({ state: 'FALLBACK', lastStep: 2 }), 'FALLBACK* step 2 · claude/claude-sonnet-5-5');
+  assert.equal(s({ state: 'PRIMARY' }), 'ok* · claude/claude-sonnet-5-5');
+  assert.equal(s({ state: 'FAILED', lastLabel: '(no step served)' }), 'FAILED* · (no step served)');
+  assert.equal(s({ state: 'ERROR', lastStep: 1 }), 'ERROR* step 1 · claude/claude-sonnet-5-5');
+  assert.equal(s({ state: 'DEGRADED', windowFallbacks: 2, windowFailed: 1 }), 'DEGRADED* 2 fb/1 fail in last 10 · claude/claude-sonnet-5-5');
+  assert.equal(s({ state: 'UNKNOWN' }), '?* · claude/claude-sonnet-5-5');
+  for (const state of ['FALLBACK', 'PRIMARY', 'FAILED', 'ERROR', 'DEGRADED', 'UNKNOWN']) {
+    const visible = s({ state, lastStep: 2, windowFallbacks: 2, windowFailed: 1 }).slice(0, VISIBLE);
+    assert.match(visible, /^(FALLBACK|ok|FAILED|ERROR|DEGRADED|\?)\*/, `${state}: state and marker visible in "${visible}"`);
+  }
+  assert.equal(tokenText({ state: 'PRIMARY', lastLabel: 'p/a', inferred: false }), 'ok · p/a');
+  assert.equal(tokenText({ state: 'PRIMARY', lastLabel: 'p/a' }), 'ok · p/a', 'no flag (report.js rows): no marker');
+  const long = tokenText({ state: 'FALLBACK', lastStep: 3, lastLabel: 'x'.repeat(100), inferred: true });
+  assert.equal([...long].length, 80);
+  assert.match(long, /^FALLBACK\* step 3 · x+…$/);
+});
+
+test('formatAge: seconds, minutes, hours up to two days, then days', () => {
+  assert.equal(formatAge(-5), '0s');
+  assert.equal(formatAge(59 * 1000), '59s');
+  assert.equal(formatAge(60 * 1000), '1m');
+  assert.equal(formatAge(34 * 60 * 1000 + 59 * 1000), '34m');
+  assert.equal(formatAge(3600 * 1000), '1h');
+  assert.equal(formatAge(47 * 3600 * 1000), '47h');
+  assert.equal(formatAge(48 * 3600 * 1000), '2d');
+});
+
+test('staleText says how old the evidence is, keeps the previous state visible, never claims "idle"', () => {
+  assert.equal(staleText('FALLBACK step 2 · p/b', 34 * 60 * 1000), 'stale 34m · FALLBACK step 2 · p/b');
+  assert.equal(staleText('ok* · p/a', 5 * 3600 * 1000), 'stale* 5h · ok · p/a', 'the marker moves up to `stale*`');
+  assert.equal(staleText('?* · x', 31 * 60 * 1000), 'stale* 31m · ? · x');
+  assert.equal(staleText(null, 40 * 60 * 1000), 'stale 40m · ? shared', 'a pane only ever seen sharing requests');
+  for (const prev of ['FALLBACK* step 2 · p/b', 'DEGRADED* 2 fb/1 fail in last 10 · x', 'ERROR* step 1 · x', 'FAILED* · (no step served)']) {
+    const visible = staleText(prev, 31 * 60 * 1000).slice(0, VISIBLE);
+    assert.match(visible, /^stale\* 31m · [A-Z]+/, `marker and state visible in "${visible}"`);
+  }
+  assert.equal(staleText('a*b · x', 31 * 60 * 1000), 'stale 31m · a*b · x', 'only a marker glued to the end of the state word moves');
+  const long = staleText(tokenText({ state: 'FALLBACK', lastStep: 2, lastLabel: 'y'.repeat(100) }), 60 * 60 * 1000);
+  assert.equal([...long].length, 80);
+  assert.match(long, /^stale 1h · FALLBACK step 2 · y+…$/);
+  assert.doesNotMatch(long.slice(0, -1), /…/, 'one ellipsis, at the end');
+});
+
+test('sharedText: the route is unknown now, whatever the pane showed before', () => {
+  assert.equal(sharedText('ok* · p/a'), '? shared · ok* · p/a');
+  assert.equal(sharedText(null), '? shared with another pane');
+  for (const prev of ['FALLBACK* step 2 · p/b', 'DEGRADED* 2 fb/1 fail in last 10 · x']) {
+    assert.match(sharedText(prev).slice(0, VISIBLE), /^\? shared · [A-Z]+\*$/, 'the longest states keep their marker at column 20');
+  }
+  assert.equal([...sharedText(`ok · ${'z'.repeat(100)}`)].length, 80);
 });

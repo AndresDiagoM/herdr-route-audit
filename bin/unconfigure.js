@@ -8,7 +8,7 @@ const managed = require('../lib/managed-config.js');
 const herdr = require('../lib/herdr.js');
 
 const watch = require.resolve('./watch.js');
-const stop = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', watch, '--stop'], { encoding: 'utf8', windowsHide: true, timeout: 10000 });
+const stop = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', watch, '--stop', '--forget'], { encoding: 'utf8', windowsHide: true, timeout: 10000 });
 process.stdout.write(stop.stdout || '');
 const result = managed.uninstall();
 console.log(`config.toml: ${result.message}${result.backup ? ` (backup: ${result.backup})` : ''}`);

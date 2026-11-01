@@ -3,7 +3,7 @@
 Which [OmniRoute](https://github.com/diegosouzapw/OmniRoute) combo step actually served each
 agent pane: step 1 as intended, or a silent fallback.
 
-Developed and tested on Windows 11 with Herdr 0.9.5, OmniRoute 3.8.51 and Node 24/25. The code
+Developed and tested on Windows 11 with Herdr 0.9.5, OmniRoute 3.8.51-3.8.52 and Node 24-26. The code
 has no Windows-only paths, but Linux and macOS have not been tested yet: reports welcome.
 
 OmniRoute priority combos fall back silently and the pane footer only shows the combo name.
@@ -23,6 +23,10 @@ Requires Node ≥ 22.5 (`node:sqlite`); no dependencies. OmniRoute's database is
 `$OMNIROUTE_DATA_DIR`, `$DATA_DIR`, or `~/.omniroute` (from WSL, the Windows profile). It is
 only ever opened read-only.
 
+**Updating:** `herdr plugin update route-audit --yes` (a linked folder: pull it instead), then
+`watch-stop` and `watch-start`. A running watcher keeps the code it started with until it is
+restarted.
+
 ## The badge
 
 | `$route` reads | Meaning |
@@ -33,12 +37,31 @@ only ever opened read-only.
 | `ERROR step 1 · …` | step 1 answered the last request with an error (the combo may have retried elsewhere) |
 | `DEGRADED 2 fb/1 fail in last 10 · …` | the last request was fine, but 2 of the last 10 were fallbacks and 1 failed |
 | `? · …` | nothing conclusive yet (only client cancels, 499) |
+| `FALLBACK* step 2 · …` | `*` on the state word: at least one of the last 10 requests was placed on this pane by [correlation](#how-a-request-finds-its-pane), not by a tag. The route is what OmniRoute recorded; the pane is a guess |
+| `? shared · ok · …` | requests ran while this pane and another were working and could be placed on neither, so this pane's route is unknown right now (a pane that has sent a tagged request is never marked). After the dot, its last known state |
+| `stale 34m · ok · …` | nothing placed on this pane for 30 minutes or more: what the badge said then, and how long ago (`stale*` when that state was inferred). The pane may be idle, or working on requests that cannot be placed |
 
-Steps are numbered by the combo's **current** order. A request served by a step the combo no
-longer lists (edited or deleted since) is shown with the model the request itself recorded and is
-never counted as primary or fallback; `report.js` marks those rows `†`. A pane with no request for
-30 minutes loses its badge. Badges carry a TTL, so they disappear by themselves if the watcher
-dies.
+Herdr's default sidebar shows about 22 characters of this row (20 when the agent list scrolls), so
+the state word and its `*` always come within the first 20. Steps are numbered by the combo's **current** order. A request served by a step
+the combo no longer lists (edited or deleted since) is shown with the model the request itself
+recorded and is never counted as primary or fallback; `report.js` marks those rows `†`.
+
+**No badge never means healthy.** Every badge carries a TTL of about a minute and the watcher
+rewrites it every 30 seconds or so; a write Herdr rejects is retried on the next tick. So all
+badges disappear within a minute of the watcher stopping, or of it losing sight of Herdr or the
+database (a tick that fails refreshes nothing). A Herdr server restart leaves every pane blank
+until the next rewrite, up to about 35 seconds. While the watcher runs, a pane it has seen keeps a
+badge until the pane closes: `stale` when the evidence is old, `? shared` when its requests cannot
+be placed. A pane with no badge has not been seen (nothing placed on it since the watcher started;
+a restarted watcher replays only the last 15 minutes, and untagged requests older than a few
+seconds cannot be correlated because the working-pane history died with the old watcher), or the
+watcher is not running or not seeing: `watch-status` shows the last beat and the last complete
+tick, and says so when the watcher runs but cannot see Herdr or the database, or Herdr keeps
+rejecting a pane's badge writes (`watch.log` records each change). A stale pane's next request
+starts a fresh window and a fresh incident. If call_logs is emptied (OmniRoute's "Purge call
+logs"), the watcher notices (the newest row falls below where it was reading, or the row there is
+another one) and reads the table again from the start; only requests that ended after its last
+look page.
 
 ## Paging
 
@@ -52,7 +75,30 @@ from herdr-telegram-agents into this plugin's `notify.json` (or `node bin/telegr
 - **Nothing while it lasts**, however much it flaps between steps.
 - **One page when it closes**: after 3 consecutive clean step-1 requests. A step-1 error resets
   that count; a client cancel (499) does not count either way.
-- A restarted watcher replays the last 15 minutes to rebuild state and never pages for them.
+- A page that rests on a request placed by correlation says so: `builder (w9:p35, inferred)`.
+  That is the request that opened the incident, or any of the three that closed it.
+- Requests logged before the watcher started are history: a restarted watcher replays the last
+  15 minutes to rebuild state and never pages for them. A request logged after it started pages,
+  even inside its first tick.
+- **One page after a crash, if it hid something.** The watcher keeps in `watch.pid` how far it
+  has read. `watch-stop` deletes the file once the watcher has exited (or after 5 seconds: a
+  watcher still busy then leaves at its next beat), unless it held a gap it had not reported yet
+  (then it keeps just that). Any other end (crash, kill, reboot, Ctrl-C, a signal on
+  Linux/macOS) leaves it, and so does `watch-stop` on a watcher that had already died;
+  `unconfigure` (before uninstalling) removes it in every case. The next start counts the combo
+  requests OmniRoute logged between that point and its own start, from any client, not only Herdr
+  panes. If any was served by a fallback step or by no step, it pages once (one attempt, like
+  every page): `⚠️ route-audit: the watcher was down for 38m (since 2026-10-31T19:02Z) and saw
+  none of the 37 combo requests OmniRoute logged meanwhile, from any client: 5 by a fallback step,
+  1 by no step. codigo-5: 3 fallback · reviewer: 2 fallback, 1 failed`. A gap with only clean requests (a reboot after an idle night, say) goes to
+  `events.jsonl` and `watch.log` only. The counts are totals with the combos that had trouble, not
+  split by pane: untagged requests cannot be placed, because nobody recorded which panes were
+  working. If OmniRoute's retention had already deleted the oldest of them, or call_logs was
+  emptied meanwhile, the page says so. A watcher that dies before reporting passes its gap on to
+  the next one. A pid file written by 0.2.0 has no read position, so the first start after
+  upgrading from it reports nothing.
+- A watcher that is down and is never started again cannot page about itself. It starts with
+  Herdr; in between, `watch-status` is the check.
 
 `telegram-test` sends one message; `telegram-off` removes the config. Failure reasons in
 `watch.log` are built from status codes and Telegram's own short messages, and are redacted, so the
@@ -75,8 +121,10 @@ bot token never reaches a log.
    with *its* environment, so every pane would inherit one id. Don't put the header in the
    global file for the same reason. Scripted `opencode run …` must close stdin (`</dev/null`)
    or it hangs.
-2. **Correlation (approximate).** Otherwise a request goes to the one pane that was `working`
-   while it ran. Two candidates is "shared" (no badge); none is unattributed.
+2. **Correlation (inferred).** Otherwise a request goes to the one pane that was `working`
+   while it ran. Badges built on a correlated request carry `*` after the state word, and pages
+   say `inferred`. Two candidates is "shared": placed on neither, never paged, and the
+   working panes that have not sent tagged requests read `? shared`. None is unattributed.
 3. A request tagged with a pane id that is no longer open is **dropped**, never handed to
    whichever pane happens to be working. `watch.js --once` prints all four counts.
 
@@ -101,12 +149,13 @@ default Agent rows plus the `$route` line. It:
 ## Self-test
 
 `herdr plugin action invoke probe --plugin route-audit` (or `node bin/probe.js`) opens a scratch
-tab, creates a throwaway combo `route-audit-probe-<pid>-<time>` whose first step the catalog
-rejects, sends one tagged `opencode run --standalone` request through it, and passes when the
-pane's badge reads `FALLBACK step 2 · antigravity/gemini-3.8-flash-tiered`. It then deletes that
-combo (only that one) and closes the tab, on every exit path including Ctrl-C. It spends one
-request on step 2 and, if paging is on, one incident (two pages once it closes). `--step1` /
-`--step2` override the steps; `--keep` leaves everything for inspection.
+tab, creates a throwaway combo `route-audit-probe-<pid>-<time>` whose first step names a provider
+that does not exist (it can only fail, and calls no one), sends one tagged `opencode run
+--standalone` request through it, and passes when the pane's badge reads `FALLBACK step 2 ·
+antigravity/gemini-3.8-flash-tiered`. It then deletes that combo (only that one) and closes the
+tab, on every exit path including Ctrl-C. It spends one request on step 2 and, if paging is on,
+one page (the incident goes with the scratch tab). `--step1` / `--step2` override the steps;
+`--keep` leaves everything for inspection.
 
 ## Commands
 
@@ -114,13 +163,13 @@ request on step 2 and, if paging is on, one incident (two pages once it closes).
 node bin/report.js --since 24h                   # per combo/step, per session, fallback episodes
 node bin/report.js --since 7d --combo reviewer-claude-opus --json
 node bin/watch.js --once                         # one dry-run tick: what each pane would show
-node bin/watch.js --status                       # pid, heartbeat, last events (events.jsonl)
+node bin/watch.js --status                       # pid, last beat, last complete tick, last events
 node --test test/*.test.js                       # on Windows list the files: test/audit.test.js …
 ```
 
 Add `--disable-warning=ExperimentalWarning` after `node` to hide Node's SQLite notice (the
 manifest does). State lives in Herdr's plugin state dir (`%LOCALAPPDATA%\herdr\plugins\route-audit`
-on Windows): `watch.pid` (pid + heartbeat), `watch.log`, `events.jsonl`.
+on Windows): `watch.pid` (pid, heartbeat, read position), `watch.log`, `events.jsonl`.
 
 ## Rules
 

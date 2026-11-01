@@ -121,3 +121,15 @@ test('perComboSteps: listed steps in order, then historical, then no-step; error
     [null, false, '(no step served)', 2, 1, 'FAILED'],
   ]);
 });
+
+test('summarizeRows: inferred when any row in the window was attributed by correlation', () => {
+  const tagged = (ts) => row({ timestamp: ts, attributed: 'tag' });
+  const guessed = (ts) => row({ timestamp: ts, attributed: 'correlated' });
+  assert.equal(summarizeRows([tagged('2026-10-16T18:00:00.000Z'), tagged('2026-10-16T18:00:01.000Z')], combos).inferred, false);
+  assert.equal(summarizeRows([guessed('2026-10-16T18:00:00.000Z'), tagged('2026-10-16T18:00:01.000Z')], combos).inferred, true,
+    'an older guessed row still counts: ok means "no fallback in the whole window"');
+  const old = [guessed('2026-10-16T17:00:00.000Z')];
+  for (let i = 0; i < 10; i++) old.push(tagged(`2026-10-16T18:00:${String(i).padStart(2, '0')}.000Z`));
+  assert.equal(summarizeRows(old, combos).inferred, false, 'a guessed row that left the window no longer counts');
+  assert.equal('inferred' in summarizeRows([row({})], combos), false, 'report.js rows carry no attribution: no flag at all');
+});

@@ -3,10 +3,12 @@
 //
 //   node bin/probe.js [--workspace ID] [--step1 provider/model] [--step2 provider/model] [--keep]
 //
-// Creates a scratch tab and a throwaway OmniRoute combo with a unique name whose first step the
-// catalog rejects, sends one tagged request through it with `opencode run --standalone`, waits
-// for the pane's `$route` token to read FALLBACK, then deletes the combo and closes the tab.
-// Costs one request on step 2.
+// Creates a scratch tab and a throwaway OmniRoute combo with a unique name whose first step names
+// a provider that does not exist (so it can only fail, without calling anyone or cooling a real
+// connection), sends one tagged request through it with `opencode run --standalone`, waits for the
+// pane's `$route` token to read FALLBACK, then deletes the combo and closes the tab. Costs one
+// request on step 2. (Until 0.2.1 step 1 was `claude/claude-sonnet-5-5-low`, an effort alias the
+// catalog used to reject; OmniRoute 3.8.52 serves it, so it no longer makes a fallback.)
 //
 // Cleanup runs on every exit path (success, failure, exception, Ctrl-C, SIGTERM), and only
 // removes what this run created: the combo name is unique to the run and is deleted only after
@@ -22,7 +24,7 @@ const { runTool } = require('../lib/exec.js');
 const argv = process.argv.slice(2);
 const opt = (name, dflt) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : dflt; };
 const keep = argv.includes('--keep');
-const step1 = opt('--step1', 'claude/claude-sonnet-5-5-low');
+const step1 = opt('--step1', 'routeauditnoprovider/probe-model');
 const step2 = opt('--step2', 'antigravity/gemini-3.8-flash-tiered');
 const COMBO = `route-audit-probe-${process.pid}-${Date.now().toString(36)}`;
 
