@@ -797,3 +797,67 @@ test('a pane that tagged requests once is never marked `? shared`, however long 
   assert.match(lastRoute(herdr, 'w1:p1'), /^stale 40m · ok · p\/a$/);
   assert.equal(lastRoute(herdr, 'w1:p2'), '? shared with another pane');
 });
+
+// Discussion #5400 follow-up (antropos17): a watcher that is alive but cannot see must never keep a
+// route on screen as if it were current. Neither branch of a blind tick writes a badge, so the last
+// one lapses at its TTL and the pane goes blank ("no watcher that can see").
+test('a live but blind watcher (Herdr list or database failing) refreshes no badge, so the last one lapses', () => {
+  const { TTL_MS } = require('../bin/watch.js');
+  const db = makeDb();
+  const clock = { t: Date.now() };
+  db.add(clock.t - 1000, 1);
+  const herdr = fakeHerdr();
+  let lists = true;
+  const panes = herdr.panes;
+  herdr.panes = () => (lists ? panes() : null);
+  const { w } = watcher(db.file, { clock, herdr });
+  w.tick();
+  assert.equal(lastRoute(herdr, 'w1:p1'), 'ok · p/a');
+  const healthy = herdr.calls.length;
+  lists = false;
+  for (let t = 0; t < 2 * TTL_MS; t += 5000) { clock.t += 5000; w.tick(); }
+  assert.equal(herdr.calls.length, healthy, 'no write while Herdr cannot be listed');
+  lists = true;
+  const real = dbModule.loadRowsAfter;
+  dbModule.loadRowsAfter = () => { throw new Error('database is locked'); };
+  try {
+    for (let t = 0; t < 2 * TTL_MS; t += 5000) { clock.t += 5000; assert.throws(() => w.tick(), /locked/); }
+  } finally {
+    dbModule.loadRowsAfter = real;
+  }
+  assert.equal(herdr.calls.length, healthy, 'no write while the database cannot be read');
+  clock.t += 5000;
+  w.tick();
+  w.close();
+  db.close();
+  assert.equal(herdr.calls.length, healthy + 1, 'sight back: the badge is written again (the fake does record writes)');
+});
+
+// Same follow-up: restart catch-up reports the gap once and never places its untagged requests on
+// a pane, not even on the one that is working at restart (no poll recorded who worked back then).
+test('restart catch-up: untagged gap requests are counted once and placed on no pane, even one working now', () => {
+  const start = Date.now();
+  const db = makeDb();
+  db.add(start - 40 * 60000, 1, null);
+  const seen = db.maxRowid();
+  db.bulk([[start - 10 * 60000, 2, null], [start - 9 * 60000, null, null, 502]]);
+  const clock = { t: start };
+  const previous = { pid: 1, beat: start - 20 * 60000 + 3000, tickAt: start - 20 * 60000, seen, running: false };
+  const herdr = herdrWith(['w1:p1', 'w1:p2'], ['w1:p1']);
+  const { w, events, pages } = watcher(db.file, { clock, previous, herdr });
+  for (let i = 0; i < 3; i++) { w.tick(); clock.t += 5000; }
+  const gaps = events.filter((e) => e.event === 'gap');
+  assert.equal(gaps.length, 1, 'reported once over several ticks');
+  assert.deepEqual([gaps[0].requests, gaps[0].fallbacks, gaps[0].failed], [2, 1, 1]);
+  assert.equal(gaps[0].pane, undefined, 'the gap names no pane');
+  assert.deepEqual(pages, gaps);
+  assert.deepEqual(herdr.calls, [], 'no badge from the gap: neither pane gets its requests');
+  // Not vacuous: the working pane is visible to correlation, so a live untagged fallback lands on it.
+  db.add(clock.t - 200, 2, null);
+  w.tick();
+  w.close();
+  db.close();
+  assert.match(lastRoute(herdr, 'w1:p1'), /^FALLBACK\* step 2/);
+  assert.deepEqual(events.filter((e) => e.event !== 'gap').map((e) => [e.pane, e.inferred]), [['w1:p1', true]]);
+  assert.equal(events.filter((e) => e.event === 'gap').length, 1, 'still once');
+});
